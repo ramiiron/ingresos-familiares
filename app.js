@@ -1,10 +1,10 @@
 'use strict';
 /* Ingresos Familiares — PWA de control de ingresos con meta mensual.
-   Datos compartidos con Finanzas Familiares en el mismo proyecto Firebase:
-   colección 'ingresos' + config 'ingresos_app'; lee 'gastos' solo para el balance. */
+   App aislada: solo colección 'ingresos' + config 'ingresos_app' en Firebase.
+   No lee ni mezcla datos de Finanzas Familiares (corrección de Ramiro, 2026-10-27). */
 
 const LS_KEY = 'ingresos-familiares-v1';
-const APP_VERSION = '1.0';
+const APP_VERSION = '1.1';
 const DEFAULT_SOURCES = ['Trabajo Ensign', 'Trabajo Nicole', 'Pastelería', 'Fotografía', 'Arriendo Chile', 'Otro'];
 const SOURCE_COLORS = ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24', '#f87171', '#2dd4bf', '#f472b6', '#9ca3af'];
 const SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
@@ -30,7 +30,6 @@ const FIREBASE_CONFIG = {
 };
 let db = null, cloudOn = false, cloudErr = '';
 let currentView = 'dash';
-let gastosTxs = []; // solo lectura, para el balance del mes
 
 const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 
@@ -108,12 +107,6 @@ async function initCloud() {
         if (currentView === 'hist') renderHistory();
       }
     });
-    db.collection('gastos').onSnapshot(snap => {
-      const arr = [];
-      snap.forEach(d => { const x = d.data(); x.id = d.id; arr.push(x); });
-      gastosTxs = arr;
-      if (currentView === 'dash') renderDashboard();
-    });
   } catch (e) {
     cloudOn = false; db = null;
     cloudErr = (e && e.message) ? String(e.message).slice(0, 140) : 'error desconocido';
@@ -185,10 +178,6 @@ function sourceIcon(src) {
 function monthTxs() {
   return state.txs.filter(t => (t.date || '').slice(0, 7) === viewMonth);
 }
-function monthGastosTotal() {
-  return gastosTxs.filter(t => (t.date || '').slice(0, 7) === viewMonth)
-    .reduce((s, t) => s + Number(t.amount || 0), 0);
-}
 function renderDashboard() {
   const txs = monthTxs();
   const total = txs.reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -211,17 +200,6 @@ function renderDashboard() {
     ';stroke-dasharray:' + CIRC.toFixed(1) + ';stroke-dashoffset:' + (CIRC * (1 - pct / 100)).toFixed(1) + '"/>' +
     '</svg><div class="ring-pct">' + (goal > 0 ? Math.round(pct) + '%' : '—') + '</div></div></div>' +
     '<div><span class="statuspill ' + pill + '">' + esc(status) + '</span></div></div>';
-
-  // Balance del mes (ingresos − gastos de Finanzas, si la nube está activa)
-  if (cloudOn) {
-    const g = monthGastosTotal();
-    const bal = total - g;
-    html += '<div class="card"><h2>Balance del mes</h2><div class="personrow">' +
-      '<div class="person"><div class="pname">Ingresos</div><div class="pamt" style="color:var(--accent-bright)">' + fmt(total) + '</div></div>' +
-      '<div class="person"><div class="pname">Gastos</div><div class="pamt" style="color:var(--red)">' + fmt(g) + '</div></div>' +
-      '<div class="person"><div class="pname">Balance</div><div class="pamt" style="color:' + (bal >= 0 ? 'var(--accent-bright)' : 'var(--red)') + '">' + fmt(bal) + '</div></div>' +
-      '</div><div class="hint">Gastos leídos de Finanzas Familiares (solo lectura).</div></div>';
-  }
 
   // Por fuente
   const bySrc = {};
@@ -398,7 +376,7 @@ function renderSettings() {
     '<div class="card"><h2>Respaldo</h2>' +
     '<button class="btn ghost" id="sExport">Exportar datos (JSON)</button>' +
     '<button class="btn danger" id="sWipe" style="margin-top:10px">Borrar todos los ingresos</button>' +
-    '<div class="hint">Esto borra solo los ingresos, no los gastos de Finanzas.</div></div>' +
+    '<div class="hint">Exporta un respaldo de vez en cuando.</div></div>' +
     '<div class="ver">Ingresos Familiares · v' + APP_VERSION + '</div>';
 
   document.getElementById('sSaveGoal').onclick = () => {
