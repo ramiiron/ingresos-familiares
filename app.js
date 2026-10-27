@@ -6,7 +6,7 @@
    2026-10-27); no se lee nada de la otra app. */
 
 const LS_KEY = 'ingresos-familiares-v1';
-const APP_VERSION = '1.3';
+const APP_VERSION = '1.4';
 const DEFAULT_SOURCES = ['Trabajo Ensign', 'Trabajo Nicole', 'Pastelería', 'Fotografía', 'Arriendo Chile', 'Otro'];
 const DEFAULT_EXPCATS = ['Equipo', 'Fondos y props', 'Transporte', 'Edición y software', 'Impresión', 'Marketing', 'Otro'];
 const SOURCE_COLORS = ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24', '#f87171', '#2dd4bf', '#f472b6', '#9ca3af'];
@@ -295,7 +295,7 @@ function renderDashboard() {
   const fotoBal = fotoIn - expTotal;
   html += '<div class="card"><h2>Fotografía este mes</h2><div class="personrow">' +
     '<div class="person"><div class="pname">Ingresos foto</div><div class="pamt" style="color:var(--accent-bright)">' + fmt(fotoIn) + '</div></div>' +
-    '<div class="person"><div class="pname">Gastos foto</div><div class="pamt" style="color:var(--red)">' + fmt(expTotal) + '</div></div>' +
+    '<div class="person"><div class="pname">Gastos</div><div class="pamt" style="color:var(--red)">' + fmt(expTotal) + '</div></div>' +
     '<div class="person"><div class="pname">Balance foto</div><div class="pamt" style="color:' + (fotoBal >= 0 ? 'var(--accent-bright)' : 'var(--red)') + '">' + fmt(fotoBal) + '</div></div>' +
     '</div></div>';
 
@@ -303,8 +303,8 @@ function renderDashboard() {
   const byCat = {};
   expTxs.forEach(t => { byCat[t.cat] = (byCat[t.cat] || 0) + Number(t.amount || 0); });
   const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
-  html += '<div class="card"><h2>Gastos de fotografía por categoría</h2>';
-  if (!cats.length) html += '<div class="empty">Sin gastos de fotografía este mes.</div>';
+  html += '<div class="card"><h2>Gastos por categoría</h2>';
+  if (!cats.length) html += '<div class="empty">Sin gastos este mes.</div>';
   const maxCat = cats.length ? cats[0][1] : 1;
   cats.forEach(([c, v]) => {
     const cc = expColor(c);
@@ -317,7 +317,7 @@ function renderDashboard() {
 
   // Últimos gastos foto
   const recentExp = expTxs.slice().sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.ts || 0) - (a.ts || 0)).slice(0, 5);
-  html += '<div class="card"><h2>Últimos gastos de fotografía</h2>';
+  html += '<div class="card"><h2>Últimos gastos</h2>';
   if (!recentExp.length) html += '<div class="empty">Nada por aquí todavía.</div>';
   recentExp.forEach(t => { html += expRow(t); });
   html += '</div>';
@@ -363,7 +363,7 @@ function bindTxButtons(root) {
 function bindExpButtons(root) {
   root.querySelectorAll('[data-del-exp]').forEach(b => {
     b.onclick = () => {
-      if (confirm('¿Eliminar este gasto de fotografía?')) removeExp(b.getAttribute('data-del-exp'));
+      if (confirm('¿Eliminar este gasto?')) removeExp(b.getAttribute('data-del-exp'));
     };
   });
   root.querySelectorAll('[data-edit-exp]').forEach(b => {
@@ -389,11 +389,11 @@ function renderForm() {
   const isGas = formType === 'gas';
   const opts = (isGas ? state.expCats : state.sources).map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('');
   document.getElementById('form').innerHTML =
-    '<div class="card"><h2>' + (editId ? (editKind === 'gas' ? 'Editar gasto de fotografía' : 'Editar ingreso') : 'Nuevo movimiento') + '</h2>' +
+    '<div class="card"><h2>' + (editId ? (editKind === 'gas' ? 'Editar gasto' : 'Editar ingreso') : 'Nuevo movimiento') + '</h2>' +
     (editId ? '' :
       '<label style="margin-top:0">Tipo</label><div class="seg" id="fType">' +
       '<button type="button" data-t="ing" class="' + (!isGas ? 'on' : '') + '">Ingreso</button>' +
-      '<button type="button" data-t="gas" class="' + (isGas ? 'on' : '') + '">Gasto foto</button></div>') +
+      '<button type="button" data-t="gas" class="' + (isGas ? 'on' : '') + '">Gasto</button></div>') +
     '<label>Monto (USD)</label>' +
     '<input id="fAmount" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0.00">' +
     '<label>' + (isGas ? 'Categoría' : 'Fuente') + '</label><select id="fSource">' + opts + '</select>' +
@@ -459,7 +459,7 @@ function renderHistory() {
     '<button id="hNext" aria-label="Mes siguiente">›</button></div>';
   html += '<div class="seg" id="hType" style="margin-bottom:12px">' +
     '<button type="button" data-t="ing" class="' + (!isGas ? 'on' : '') + '">Ingresos</button>' +
-    '<button type="button" data-t="gas" class="' + (isGas ? 'on' : '') + '">Gastos foto</button></div>';
+    '<button type="button" data-t="gas" class="' + (isGas ? 'on' : '') + '">Gastos</button></div>';
   html += '<div class="card"><h2>' + list.length + ' movimientos</h2>';
   if (!list.length) html += '<div class="empty">Sin movimientos este mes.</div>';
   let lastDate = '';
@@ -507,7 +507,7 @@ function renderSettings() {
     '</div><label>Nueva fuente</label><input id="sNewSrc" type="text" maxlength="30" placeholder="Ej: Intereses">' +
     '<button class="btn" id="sAddSrc">Agregar fuente</button></div>' +
 
-    '<div class="card"><h2>Categorías de gastos de fotografía</h2><div id="expList">' +
+    '<div class="card"><h2>Categorías de gastos</h2><div id="expList">' +
     state.expCats.map((c, i) => {
       const cc = expColor(c);
       return '<div class="tx"><div class="cico" style="width:38px;height:38px;color:' + cc + ';background:' + cc + '1c">' + expIcon(c) + '</div>' +
@@ -520,7 +520,7 @@ function renderSettings() {
     '<div class="card"><h2>Respaldo</h2>' +
     '<button class="btn ghost" id="sExport">Exportar datos (JSON)</button>' +
     '<button class="btn danger" id="sWipe" style="margin-top:10px">Borrar todos los ingresos</button>' +
-    '<button class="btn danger" id="sWipeExp" style="margin-top:10px">Borrar todos los gastos foto</button>' +
+    '<button class="btn danger" id="sWipeExp" style="margin-top:10px">Borrar todos los gastos</button>' +
     '<div class="hint">Exporta un respaldo de vez en cuando.</div></div>' +
     '<div class="ver">Ingresos Familiares · v' + APP_VERSION + '</div>';
 
@@ -583,8 +583,8 @@ function renderSettings() {
     }
   };
   document.getElementById('sWipeExp').onclick = async () => {
-    if (confirm('¿Borrar TODOS los gastos de fotografía? Esto no se puede deshacer.') &&
-        confirm('¿Seguro? Se perderán todos los gastos de fotografía registrados.')) {
+    if (confirm('¿Borrar TODOS los gastos? Esto no se puede deshacer.') &&
+        confirm('¿Seguro? Se perderán todos los gastos registrados.')) {
       if (cloudOn && db) {
         try {
           const snap = await db.collection('gastos_foto').get();
