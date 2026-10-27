@@ -1,4 +1,4 @@
-const CACHE = 'ingresos-pwa-v2';
+const CACHE = 'ingresos-pwa-v3';
 const CDN_CACHE = 'ingresos-pwa-cdn';
 const FILES = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png'];
@@ -19,6 +19,7 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) {
+    // Librerías CDN (Firebase): caché al primer uso.
     e.respondWith(
       caches.open(CDN_CACHE).then(c =>
         c.match(e.request).then(hit => hit || fetch(e.request).then(res => {
@@ -29,7 +30,16 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
+  // Propio origen: network-first. Siempre sirve la versión publicada;
+  // el caché es solo respaldo offline. Esto evita loops de actualización
+  // por el max-age=600 de GitHub Pages / iOS.
   e.respondWith(
-    caches.match(e.request, { ignoreSearch: true }).then(hit => hit || fetch(e.request))
+    fetch(e.request).then(res => {
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
+      }
+      return res;
+    }).catch(() => caches.match(e.request, { ignoreSearch: true }))
   );
 });

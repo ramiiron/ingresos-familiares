@@ -4,7 +4,7 @@
    No lee ni mezcla datos de Finanzas Familiares (corrección de Ramiro, 2026-10-27). */
 
 const LS_KEY = 'ingresos-familiares-v1';
-const APP_VERSION = '1.1';
+const APP_VERSION = '1.2';
 const DEFAULT_SOURCES = ['Trabajo Ensign', 'Trabajo Nicole', 'Pastelería', 'Fotografía', 'Arriendo Chile', 'Otro'];
 const SOURCE_COLORS = ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24', '#f87171', '#2dd4bf', '#f472b6', '#9ca3af'];
 const SVG_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
@@ -444,18 +444,10 @@ document.querySelectorAll('nav button').forEach(b => {
 });
 
 if ('serviceWorker' in navigator) {
+  // Sin auto-recarga al detectar SW nuevo: ese reload era una fuente del loop.
+  // La actualización la maneja el aviso de version.json, con limpieza total.
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').then(reg => {
-      reg.addEventListener('updatefound', () => {
-        const nw = reg.installing;
-        if (!nw) return;
-        nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-            window.location.reload();
-          }
-        });
-      });
-    }).catch(() => {});
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
   });
 }
 
@@ -478,22 +470,20 @@ async function checkForUpdate() {
     b.textContent = '↓ Hay una versión nueva — toca para actualizar';
     b.onclick = async () => {
       b.textContent = 'Actualizando…';
+      // Limpieza total: desregistra el SW y borra todos los cachés, luego
+      // recarga con URL anti-caché. Salir del loop exige partir de cero,
+      // no parchar el caché viejo (eso era lo que fallaba en v1.0/v1.1).
       try {
-        const names = await caches.keys();
-        const mains = names.filter(k => k.indexOf('ingresos-pwa-v') === 0 && k !== 'ingresos-pwa-cdn').sort();
-        const main = mains[mains.length - 1];
-        if (main) {
-          const c = await caches.open(main);
-          const files = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest'];
-          await Promise.all(files.map(async f => {
-            try {
-              const rr = await fetch(f + '?v=' + target, { cache: 'no-store' });
-              if (rr.ok) await c.put(f, rr);
-            } catch (e) {}
-          }));
+        if ('serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
         }
+        const names = await caches.keys();
+        await Promise.all(names.map(k => caches.delete(k)));
       } catch (e) {}
-      setTimeout(() => window.location.reload(), 600);
+      setTimeout(() => {
+        window.location.replace('./index.html?upd=' + target + '-' + Date.now());
+      }, 400);
     };
     document.body.appendChild(b);
   } catch (e) {}
