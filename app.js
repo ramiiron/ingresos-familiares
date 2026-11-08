@@ -6,7 +6,7 @@
    2026-10-27); no se lee nada de la otra app. */
 
 const LS_KEY = 'ingresos-familiares-v1';
-const APP_VERSION = '1.4';
+const APP_VERSION = '1.5';
 const DEFAULT_SOURCES = ['Trabajo Ensign', 'Trabajo Nicole', 'Pastelería', 'Fotografía', 'Arriendo Chile', 'Otro'];
 const DEFAULT_EXPCATS = ['Equipo', 'Fondos y props', 'Transporte', 'Edición y software', 'Impresión', 'Marketing', 'Otro'];
 const SOURCE_COLORS = ['#34d399', '#60a5fa', '#a78bfa', '#fbbf24', '#f87171', '#2dd4bf', '#f472b6', '#9ca3af'];
@@ -104,17 +104,64 @@ async function removeExpCatAt(i) {
   else persistLocal();
 }
 
-async function initCloud() {
+// ---------- Acceso con correo y contraseña (compuerta) ----------
+// Sin una sesión de correo válida la app queda bloqueada en la pantalla de
+// ingreso. La sesión anónima heredada NO sirve: se cierra al detectarla.
+let authUser = null, cloudStarted = false;
+
+function loginMsg(txt, ok) {
+  const e = document.getElementById('login-error');
+  if (!e) return;
+  e.textContent = txt;
+  e.style.display = 'block';
+  e.classList.toggle('login-ok', !!ok);
+}
+
+function initAuth(esperado) {
   try {
     if (!FIREBASE_CONFIG || !FIREBASE_CONFIG.apiKey) return;
-    if (typeof firebase === 'undefined') return;
-    if (firebase.apps && firebase.apps.length) { db = firebase.firestore(); }
-    else {
-      firebase.initializeApp(FIREBASE_CONFIG);
-      await firebase.auth().signInAnonymously();
-      db = firebase.firestore();
-      try { await db.enablePersistence({ synchronizeTabs: true }); } catch (e) {}
+    if (typeof firebase === 'undefined') {
+      // El SDK puede tardar en cargar (red lenta): reintenta unos segundos
+      // antes de declarar que no hay conexión.
+      esperado = esperado || 0;
+      if (esperado < 5000) { setTimeout(() => initAuth(esperado + 500), 500); return; }
+      loginMsg('Sin conexión para verificar tu sesión. Revisa internet y vuelve a abrir la app.');
+      return;
     }
+    if (!(firebase.apps && firebase.apps.length)) firebase.initializeApp(FIREBASE_CONFIG);
+    firebase.auth().onAuthStateChanged(user => {
+      if (!user || user.isAnonymous) {
+        if (user) firebase.auth().signOut().catch(() => {});
+        authUser = null;
+        document.body.classList.remove('unlocked');
+        return;
+      }
+      authUser = user;
+      document.body.classList.add('unlocked');
+      startCloud();
+      if (currentView === 'set') renderSettings();
+    });
+  } catch (e) {
+    cloudErr = (e && e.message) ? String(e.message).slice(0, 140) : 'error desconocido';
+  }
+}
+
+function intentarLogin() {
+  const email = (document.getElementById('login-email').value || '').trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!email || !pass) { loginMsg('Escribe tu correo y tu contraseña.'); return; }
+  firebase.auth().signInWithEmailAndPassword(email, pass).catch(err => {
+    if (err && err.code === 'auth/too-many-requests') loginMsg('Demasiados intentos seguidos. Espera unos minutos e inténtalo de nuevo.');
+    else loginMsg('No pudimos ingresar: revisa el correo y la contraseña.');
+  });
+}
+
+async function startCloud() {
+  if (cloudStarted) return;
+  cloudStarted = true;
+  try {
+    db = firebase.firestore();
+    try { await db.enablePersistence({ synchronizeTabs: true }); } catch (e) {}
     cloudOn = true;
     await migrateLocalToCloud();
     if (currentView === 'set') renderSettings();
@@ -299,7 +346,7 @@ function renderDashboard() {
     '<div class="person"><div class="pname">Balance foto</div><div class="pamt" style="color:' + (fotoBal >= 0 ? 'var(--accent-bright)' : 'var(--red)') + '">' + fmt(fotoBal) + '</div></div>' +
     '</div></div>';
 
-  // Gastos foto por categoría
+  // Gastos por categoría
   const byCat = {};
   expTxs.forEach(t => { byCat[t.cat] = (byCat[t.cat] || 0) + Number(t.amount || 0); });
   const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
@@ -490,7 +537,12 @@ function renderSettings() {
       : '📱 <b>Modo local.</b> Los datos viven solo en este teléfono.') +
     ((!cloudOn && cloudErr && FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey)
       ? '<br><span style="color:var(--red)">No se pudo conectar: ' + esc(cloudErr) + '</span>' : '') +
-    '</div></div>' +
+    '</div>' +
+    (authUser
+      ? '<div class="hint">Sesión iniciada como <b>' + esc(authUser.email || '') + '</b></div>' +
+        '<button class="btn ghost" id="sSignOut">Cerrar sesión</button>'
+      : '') +
+    '</div>' +
 
     '<div class="card"><h2>Meta mensual</h2>' +
     '<label>Meta de ingresos mensual (USD) · 0 = sin meta</label>' +
@@ -524,6 +576,11 @@ function renderSettings() {
     '<div class="hint">Exporta un respaldo de vez en cuando.</div></div>' +
     '<div class="ver">Ingresos Familiares · v' + APP_VERSION + '</div>';
 
+  const sSignOutBtn = document.getElementById('sSignOut');
+  if (sSignOutBtn) sSignOutBtn.onclick = () => {
+    try { firebase.auth().signOut().then(() => location.reload()).catch(() => location.reload()); }
+    catch (e) { location.reload(); }
+  };
   document.getElementById('sSaveGoal').onclick = () => {
     const v = parseFloat(document.getElementById('sGoal').value);
     if (!(v >= 0)) { alert('Ingresa una meta válida.'); return; }
@@ -627,12 +684,24 @@ if ('serviceWorker' in navigator) {
 
 renderForm();
 showView('dash');
-initCloud();
+// ---------- Botones de la pantalla de ingreso ----------
+document.getElementById('btn-login').addEventListener('click', intentarLogin);
+document.getElementById('login-pass').addEventListener('keydown', e => { if (e.key === 'Enter') intentarLogin(); });
+document.getElementById('login-olvide').addEventListener('click', () => {
+  const email = (document.getElementById('login-email').value || '').trim();
+  if (!email) { loginMsg('Escribe primero tu correo y después toca «Olvidé mi contraseña».'); return; }
+  firebase.auth().sendPasswordResetEmail(email).then(() => {
+    loginMsg('Te enviamos un correo para crear una contraseña nueva. Revisa la bandeja de ' + email + '.', true);
+  }).catch(() => { loginMsg('No pudimos enviar el correo. Revisa que la dirección esté bien escrita.'); });
+});
+
+initAuth();
 checkForUpdate();
 if (!window.__updWatch) window.__updWatch = setInterval(checkForUpdate, 60000);
 
 // ---------- Actualización visible con un toque ----------
 async function checkForUpdate() {
+  if (!authUser) return;
   try {
     const r = await fetch('./version.json', { cache: 'no-store' });
     if (!r.ok) return;
